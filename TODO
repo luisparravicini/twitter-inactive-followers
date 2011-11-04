@@ -4,4 +4,4 @@ TODO
 
 
 - refetch the followers of a user if the date they were fetched is above certain threshold
-- check what happens on update_last_tweets for a follower who has no tweets
+- recheck after certain time if a user continues to have their tweets protected
