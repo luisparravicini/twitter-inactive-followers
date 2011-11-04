@@ -1,6 +1,7 @@
 require 'twitter'
 require 'fileutils'
 require 'logger'
+require 'time'
 
 include FileUtils
 
@@ -18,24 +19,48 @@ class ZombieDetector
     raise "User #{usr} doesn't exist" unless Twitter.user?(usr)
 
     @id = Twitter.user(usr).id
+
+    @followers_db_name = "followers_%d.db" % @id
   end
 
   def run
     update_followers
+    update_last_tweets
   end
 
   private
 
+  def update_last_tweets
+    $log.debug { "fetching last tweeted date for #{@followers.size} followers" }
+
+    i = 0
+    @followers.keys.each do |uid|
+      result = Twitter.user_timeline(uid, :count => 1, :include_rts => 1,
+        :include_entities => 0, :trim_user => 1)
+      @followers[uid] = Time.parse(result.first['created_at'])
+
+      $log.debug { "#{uid} tweeted on #{@followers[uid]}" }
+
+      i += 1
+      save_followers if i % 20 == 0
+    end
+
+    save_followers
+  end
+
   def load_followers
-    if File.exist?('followers.db')
+    if File.exist?(@followers_db_name)
       $log.debug { 'loading followers' }
-      @followers = File.open('followers.db', 'r') { |io| Marshal.load(io) }
+      @followers = File.open(@followers_db_name, 'r') { |io| Marshal.load(io) }
     end
   end
 
   def save_followers
-    File.open('followers.tmp', 'w') { |io| Marshal.dump(@followers, io) }
-    mv('followers.tmp', 'followers.db')
+    @log.debug { 'saving followers' }
+
+    tmp = @followers_db_name + '.tmp'
+    File.open(tmp, 'w') { |io| Marshal.dump(@followers, io) }
+    mv(tmp, @followers_db_name)
   end
 
   def fetch_followers
@@ -53,7 +78,10 @@ class ZombieDetector
       break if result['ids'].size == 0 || cursor == 0
     end
 
-    @followers = followers
+    new_followers = Hash.new
+    followers.each { |k| new_followers[k] = nil }
+    @followers = new_followers
+
     save_followers
 
     $log.debug { "fetched #{@followers.count} followers" }
