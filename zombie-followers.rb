@@ -30,16 +30,76 @@ class TweetInfo
   end
 end
 
+class UserInfo
+  attr_reader :uid, :screen_name
+
+  def initialize(data)
+    @uid = data['id']
+    @screen_name = data['screen_name']
+    @location = data['location']
+    @desc = data['description']
+    @favs = data['favorites_count']
+    @followers = data['followers_count']
+    @listed = data['listed_count']
+    @location = data['location']
+    @name = data['name']
+    @statutes = data['statuses_count']
+    @friends = data['friends_count']
+    @default_profile = data['default_profile']
+    @url = data['url']
+    @protected = data['protected']
+  end
+end
+
 module Zombie
 
-class Fetcher
-  attr_reader :uid
+module Users
+  def self.uid_for(screen_name)
+    self.load
+    unless @users.has_key?(screen_name)
+      self.update(Twitter.user(screen_name))
+    end
 
+    @users[screen_name].uid
+  end
+
+  def self.update(data)
+    data = UserInfo.new(data)
+    @users[data.screen_name] = data
+    self.save_users
+  end
+
+  private
+
+  def self.load
+    self.init
+
+    @users = if File.exist?(@db_name)
+      $log.debug { 'loading users' }
+      File.open(@db_name, 'r') { |io| Marshal.load(io) }
+    else
+      Hash.new
+    end
+  end
+
+  def self.init
+    @db_name ||= 'users.db'
+  end
+
+  def self.save_users
+    self.init
+    #$log.debug { "saving #{@users.count} users" }
+
+    tmp = @db_name + '.tmp'
+    File.open(tmp, 'w') { |io| Marshal.dump(@users, io) }
+    mv(tmp, @db_name)
+  end
+end
+
+class Fetcher
   def initialize(usr)
     @usr = usr
-    raise "User #{usr} doesn't exist" unless Twitter.user?(usr)
-
-    @uid = Twitter.user(usr).id
+    @uid = Users.uid_for(usr)
 
     @followers_db_name = "followers_%d.db" % @uid
   end
@@ -64,20 +124,34 @@ class Fetcher
 
       begin
         result = Twitter.user_timeline(uid, :count => 1, :include_rts => 1,
-          :include_entities => 0, :trim_user => 1)
-        last_update = unless result.empty?
-          DateTime.parse(result.first['created_at'])
+          :include_entities => 0)
+        last_update = nil
+        unless result.empty?
+          result = result.first
+          last_update = DateTime.parse(result['created_at'])
+          Users.update(result['user'])
         end 
         @followers[uid] = TweetInfo.new(last_update)
 
         $log.debug { "#{uid} tweeted on #{@followers[uid]}" }
+      rescue Twitter::BadRequest
+        if $!.ratelimit_remaining == 0
+          t = $!.ratelimit_reset - Time.now.to_i
+          $log.info { "no more calls left, sleeping #{t} secs" }
+
+          save_followers
+          sleep(t)
+          retry
+        else
+          raise $!
+        end
       rescue Twitter::Unauthorized
         $log.debug { "#{uid} tweets are protected" }
         @followers[uid] = TweetInfo.new(nil, true)
       end
 
       i += 1
-      save_followers if i % 10 == 0
+      save_followers if i % 20 == 0
     end
 
     save_followers
@@ -91,7 +165,7 @@ class Fetcher
   end
 
   def save_followers
-    $log.debug { 'saving followers' }
+    $log.debug { "saving #{@followers.size} followers" }
 
     tmp = @followers_db_name + '.tmp'
     File.open(tmp, 'w') { |io| Marshal.dump(@followers, io) }
@@ -128,9 +202,9 @@ class Fetcher
 end
 
 class Reporter
-  def initialize(uid, threshold)
+  def initialize(usr, threshold)
     @threshold = threshold
-    @uid = uid
+    @uid = Users.uid_for(usr)
     @followers_db_name = "followers_%d.db" % @uid
   end
 
@@ -172,4 +246,4 @@ end
 fetcher = Zombie::Fetcher.new(usr)
 fetcher.run
 
-Zombie::Reporter.new(fetcher.uid, threshold).run
+Zombie::Reporter.new(usr, threshold).run
