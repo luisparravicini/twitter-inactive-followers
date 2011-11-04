@@ -33,14 +33,15 @@ end
 module Zombie
 
 class Fetcher
-  def initialize(usr, threshold)
-    @threshold = threshold
+  attr_reader :uid
+
+  def initialize(usr)
     @usr = usr
     raise "User #{usr} doesn't exist" unless Twitter.user?(usr)
 
-    @id = Twitter.user(usr).id
+    @uid = Twitter.user(usr).id
 
-    @followers_db_name = "followers_%d.db" % @id
+    @followers_db_name = "followers_%d.db" % @uid
   end
 
   def run
@@ -127,12 +128,31 @@ class Fetcher
 end
 
 class Reporter
-  def initialize(usr)
-    @usr = usr
+  def initialize(uid, threshold)
+    @threshold = threshold
+    @uid = uid
+    @followers_db_name = "followers_%d.db" % @uid
   end
 
   def run
+    load_followers
+    t = DateTime.now - @threshold
+    $log.debug { "searching for followers without activity since #{t}" }
+    @followers.each do |fuid, info|
+      next if info.nil? || info.last_tweet.nil?
+      next unless info.last_tweet < t
+
+      p [fuid, info]
+    end
   end
+
+  def load_followers
+    if File.exist?(@followers_db_name)
+      $log.debug { 'loading followers' }
+      @followers = File.open(@followers_db_name, 'r') { |io| Marshal.load(io) }
+    end
+  end
+
 end
 
 end
@@ -149,5 +169,7 @@ if threshold < UPDATE_THRESHOLD
   exit 2
 end
 
-Zombie::Fetcher.new(usr, threshold).run
-Zombie::Reporter.new(usr).run
+fetcher = Zombie::Fetcher.new(usr)
+fetcher.run
+
+Zombie::Reporter.new(fetcher.uid, threshold).run
