@@ -101,8 +101,13 @@ end
 
 
 
-threshold = 10  # days
-usr = 'luisparravicini'
+usr = ARGV.shift
+threshold = ARGV.shift.to_i
+if usr.nil? || threshold < 1
+  puts "usage: #{$0} <user> <threshold_in_days>"
+  exit 1
+end
+
 zombies = ZombieDetector.new(usr, threshold)
 
 zombies.run
