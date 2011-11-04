@@ -14,7 +14,8 @@ $log.formatter = proc { |severity, datetime, progname, msg|
 
 
 class ZombieDetector
-  def initialize(usr)
+  def initialize(usr, threshold)
+    @threshold = threshold
     @usr = usr
     raise "User #{usr} doesn't exist" unless Twitter.user?(usr)
 
@@ -33,11 +34,16 @@ class ZombieDetector
   def update_last_tweets
     $log.debug { "fetching last tweeted date for #{@followers.size} followers" }
 
+    now = DateTime.now
     i = 0
     @followers.keys.each do |uid|
+      unless @followers[uid].nil?
+        next if (@followers[uid] - @threshold).abs < @threshold
+      end
+
       result = Twitter.user_timeline(uid, :count => 1, :include_rts => 1,
         :include_entities => 0, :trim_user => 1)
-      @followers[uid] = Time.parse(result.first['created_at'])
+      @followers[uid] = DateTime.parse(result.first['created_at'])
 
       $log.debug { "#{uid} tweeted on #{@followers[uid]}" }
 
@@ -95,7 +101,8 @@ end
 
 
 
+threshold = 10  # days
 usr = 'luisparravicini'
-zombies = ZombieDetector.new(usr)
+zombies = ZombieDetector.new(usr, threshold)
 
 zombies.run
