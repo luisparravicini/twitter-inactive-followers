@@ -26,7 +26,10 @@ class TweetInfo
   def protected?; @protected; end
 
   def to_s
-    "tweet: %s, update: %s, protected=%s" % [@last_tweet, @updated_at, @protected]
+    last = unless @last_tweet.nil?
+      @last_tweet.strftime('%F')
+    end
+    "tweet: %s\tupdate: %s\tprotected=%s" % [last, @updated_at.strftime('%F'), @protected]
   end
 end
 
@@ -133,13 +136,14 @@ class Fetcher
         end 
         @followers[uid] = TweetInfo.new(last_update)
 
-        $log.debug { "#{uid} tweeted on #{@followers[uid]}" }
+        $log.debug { "uid:#{uid}, #{@followers[uid]}" }
       rescue Twitter::BadRequest
         if $!.ratelimit_remaining == 0
-          t = $!.ratelimit_reset - Time.now.to_i
-          $log.info { "no more calls left, sleeping #{t} secs" }
-
           save_followers
+
+          t = $!.ratelimit_reset - Time.now
+          $log.info { "no more calls left, sleeping till #{Time.now + t}" }
+
           sleep(t)
           retry
         else
@@ -212,12 +216,21 @@ class Reporter
     load_followers
     t = DateTime.now - @threshold
     $log.debug { "searching for followers without activity since #{t}" }
+    inactive = no_data = 0
     @followers.each do |fuid, info|
-      next if info.nil? || info.last_tweet.nil?
+      if info.nil? || info.last_tweet.nil?
+        no_data += 1
+        next
+      end
       next unless info.last_tweet < t
 
-      p [fuid, info]
+      puts [fuid, info].join("\t")
+      inactive += 1
     end
+
+    with_data = @followers.size - no_data
+    puts "%d/%d = %2.2f%% (from a total of %d followers)" % [inactive,
+      with_data, inactive*100/with_data.to_f, @followers.size]
   end
 
   def load_followers
@@ -234,8 +247,9 @@ end
 
 usr = ARGV.shift
 threshold = ARGV.shift.to_i
+dont_fetch = ARGV.shift == '-n'
 if usr.nil? || threshold < 1
-  puts "usage: #{$0} <user> <threshold_in_days>"
+  puts "usage: #{$0} <user> <threshold_in_days> [-n]"
   exit 1
 end
 if threshold < UPDATE_THRESHOLD
@@ -243,7 +257,7 @@ if threshold < UPDATE_THRESHOLD
   exit 2
 end
 
-fetcher = Zombie::Fetcher.new(usr)
-fetcher.run
-
+unless dont_fetch
+  Zombie::Fetcher.new(usr).run
+end
 Zombie::Reporter.new(usr, threshold).run
