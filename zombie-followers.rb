@@ -7,6 +7,9 @@ include FileUtils
 
 $log = Logger.new(STDOUT)
 $log.level = Logger::DEBUG
+$log.formatter = proc { |severity, datetime, progname, msg|
+  "#{datetime}, #{severity}: #{msg}\n"
+}
 
 
 class ZombieDetector
