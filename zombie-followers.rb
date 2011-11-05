@@ -12,7 +12,7 @@ $log.formatter = proc { |severity, datetime, progname, msg|
   "#{datetime}, #{severity}: #{msg}\n"
 }
 
-UPDATE_THRESHOLD = 5
+UPDATE_THRESHOLD = 15
 
 class TweetInfo
   attr_reader :last_tweet, :updated_at
@@ -57,6 +57,21 @@ end
 module Zombie
 
 module Users
+  def self.screen_name(uid)
+    #FIXME hack
+    usr = @users.find do |_, info|
+      next if info.nil?
+
+      uid == info.uid
+    end
+
+    if usr.nil?
+      uid
+    else
+      usr.last.screen_name
+    end
+  end
+
   def self.uid_for(screen_name)
     self.load
     unless @users.has_key?(screen_name)
@@ -216,21 +231,27 @@ class Reporter
     load_followers
     t = DateTime.now - @threshold
     $log.debug { "searching for followers without activity since #{t}" }
-    inactive = no_data = 0
+    inactive = no_data = prot = 0
     @followers.each do |fuid, info|
+      # TODO should be stored as fixnum
+      fuid = fuid.to_i
+
+      if !info.nil? && info.protected?
+        prot += 1
+      end
       if info.nil? || info.last_tweet.nil?
         no_data += 1
         next
       end
       next unless info.last_tweet < t
 
-      puts [fuid, info].join("\t")
+      puts [Users.screen_name(fuid), info].join("\t")
       inactive += 1
     end
 
     with_data = @followers.size - no_data
-    puts "%d/%d = %2.2f%% (from a total of %d followers)" % [inactive,
-      with_data, inactive*100/with_data.to_f, @followers.size]
+    puts "%d/%d = %2.2f%% (total:%d, protected:%d)" % [inactive,
+      with_data, inactive*100/with_data.to_f, @followers.size, prot]
   end
 
   def load_followers
