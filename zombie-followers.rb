@@ -34,10 +34,16 @@ class TweetInfo
 end
 
 class UserInfo
-  attr_reader :uid, :screen_name
+  attr_reader :uid, :screen_name, :friends, :followers, :friends, :created_at
+
+  #FIXME change attr name
+  def statuses
+    @statutes
+  end
 
   def initialize(data)
     @uid = data['id']
+    @created_at = data['created_at']
     @screen_name = data['screen_name']
     @location = data['location']
     @desc = data['description']
@@ -57,7 +63,7 @@ end
 module Zombie
 
 module Users
-  def self.screen_name(uid)
+  def self.usr_for(uid)
     #FIXME hack
     usr = @users.find do |_, info|
       next if info.nil?
@@ -65,10 +71,16 @@ module Users
       uid == info.uid
     end
 
+    usr.last unless usr.nil?
+  end
+
+  def self.screen_name(uid)
+    usr = usr_for(uid)
+
     if usr.nil?
       uid
     else
-      usr.last.screen_name
+      usr.screen_name
     end
   end
 
@@ -78,12 +90,12 @@ module Users
       self.update(Twitter.user(screen_name))
     end
 
-    @users[screen_name].uid
+    @users[screen_name.downcase].uid
   end
 
   def self.update(data)
     data = UserInfo.new(data)
-    @users[data.screen_name] = data
+    @users[data.screen_name.downcase] = data
     self.save_users
   end
 
@@ -111,6 +123,8 @@ module Users
     tmp = @db_name + '.tmp'
     File.open(tmp, 'w') { |io| Marshal.dump(@users, io) }
     mv(tmp, @db_name)
+
+    @users ||= Hash.new
   end
 end
 
@@ -245,7 +259,12 @@ class Reporter
       end
       next unless info.last_tweet < t
 
-      puts [Users.screen_name(fuid), info].join("\t")
+      usr = Users.usr_for(fuid)
+      unless usr.nil?
+        puts [usr.screen_name, usr.created_at, usr.statuses, usr.friends, usr.followers, info].join("\t")
+      #else
+      #  puts [Users.screen_name(fuid), info].join("  ")
+      end
       inactive += 1
     end
 
@@ -279,6 +298,24 @@ if threshold < UPDATE_THRESHOLD
 end
 
 unless dont_fetch
-  Zombie::Fetcher.new(usr).run
+  begin
+    Zombie::Fetcher.new(usr).run
+  rescue Twitter::BadRequest
+    #FIXME copypasted from above code. refactor
+    if $!.ratelimit_remaining == 0
+
+      t = $!.ratelimit_reset - Time.now
+      $log.info { "no more calls left, sleeping till #{Time.now + t}" }
+
+      sleep(t)
+      retry
+    else
+      raise $!
+    end
+  rescue Errno::ECONNRESET, SocketError, Twitter::Error, Timeout::Error, EOFError
+    $log.error { "#{$!.message}. sleeping" }
+    sleep 30
+    retry
+  end
 end
 Zombie::Reporter.new(usr, threshold).run
