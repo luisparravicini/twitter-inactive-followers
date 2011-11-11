@@ -243,6 +243,7 @@ class Reporter
 
   def run
     load_followers
+
     t = DateTime.now - @threshold
     $log.debug { "searching for followers without activity since #{t}" }
     inactive = no_data = prot = 0
@@ -261,7 +262,9 @@ class Reporter
 
       usr = Users.usr_for(fuid)
       unless usr.nil?
-        puts [usr.screen_name, usr.created_at, usr.statuses, usr.friends, usr.followers, info].join("\t")
+        # TODO this should be a DateTime
+        d = DateTime.parse(usr.created_at).strftime('%F')
+        puts [usr.screen_name, d, usr.statuses, usr.friends, usr.followers, info].join("\t")
       #else
       #  puts [Users.screen_name(fuid), info].join("  ")
       end
