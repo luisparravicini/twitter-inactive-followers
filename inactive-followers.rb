@@ -2,6 +2,7 @@ require 'twitter'
 require 'fileutils'
 require 'logger'
 require 'date'
+require 'set'
 
 include FileUtils
 
@@ -247,7 +248,11 @@ class Reporter
     t = DateTime.now - @threshold
     $log.debug { "searching for followers without activity since #{t}" }
     inactive = no_data = prot = 0
+    reasons = Set.new
     @followers.each do |fuid, info|
+      score = 0
+      reasons.clear
+
       # TODO should be stored as fixnum
       fuid = fuid.to_i
 
@@ -256,19 +261,53 @@ class Reporter
       end
       if info.nil? || info.last_tweet.nil?
         no_data += 1
-        next
+        if !info.nil? && info.last_tweet.nil?
+          score += 1
+          reasons << :no_tweets
+        end
+      elsif info.last_tweet < t
+        score += 1
+        reasons << :no_recent_tweets
       end
-      next unless info.last_tweet < t
 
       usr = Users.usr_for(fuid)
-      unless usr.nil?
-        # TODO this should be a DateTime
-        d = DateTime.parse(usr.created_at).strftime('%F')
-        puts [usr.screen_name, d, usr.statuses, usr.friends, usr.followers, info].join("\t")
-      #else
-      #  puts [Users.screen_name(fuid), info].join("  ")
+      next if usr.nil?
+      # TODO this should be a DateTime
+      d = DateTime.parse(usr.created_at)
+
+      days_since_creation = (d.to_date - t.to_date).abs.to_f
+      t_x_day = usr.statuses / days_since_creation
+      if t_x_day < 1
+        score += 1
+        reasons << :less_than_one_x_day
       end
-      inactive += 1
+      if t_x_day > 30
+        score += 1
+        reasons << :too_many_tweets_x_day
+      end
+    
+      if d > t
+        score += 1
+        reasons << :new_user
+      end
+      if usr.statuses < 10
+        score += 1
+        reasons << :few_tweets
+      end
+      if usr.followers < 10
+        score += 1
+        reasons << :few_followers
+      end
+      if usr.friends < 10
+        score += 1
+        reasons << :few_friends
+      end
+
+      if score > 1
+        puts [score, usr.screen_name, d.strftime('%F'), usr.statuses, usr.friends, usr.followers, info, reasons.to_a].join("\t")
+        inactive += 1
+      end
+
     end
 
     with_data = @followers.size - no_data
@@ -315,7 +354,8 @@ unless dont_fetch
     else
       raise $!
     end
-  rescue Errno::ECONNRESET, SocketError, Twitter::Error, Timeout::Error, EOFError
+  rescue Errno::ECONNRESET, SocketError, Twitter::Error, Timeout::Error, EOFError,
+    Errno::ETIMEDOUT
     $log.error { "#{$!.message}. sleeping" }
     sleep 30
     retry
