@@ -1,7 +1,7 @@
 Twitter Inactive Followers
 ==========================
 
-I've made this script to try to find how many of the followers I have on twitter are inactive accounts. I think there are already services which does this and my approach to mark an account as inactive is naive.
+I've made this script to try to find how many of the followers I have on twitter are inactive accounts. I think there are already services which does this and my approach to mark an account as inactive is naive, just coded this because I was bored.
 
 Requeriments
 ------------
@@ -15,12 +15,14 @@ How to use it
     ruby inactive-followers <scree_name> <inactive_days> [-n]
 
 The script has two phases, first it gets the needed data from Twitter:
+
 * get the user followers
 * for each follower, get last tweet and user info
 
 All the data is saved locally. Twitter API has a limit of 150 requests per hour, the script does not do any throttling, it consumes all the requests it can, then it sleeps until it can continue.
 
 Then it uses the data to check which follower is inactive:
+
 * each follower has a score, it starts at 0
 * if certain criteria are met, increase the score
 * list all users whose score is above certain threshold
