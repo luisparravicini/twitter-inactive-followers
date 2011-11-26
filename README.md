@@ -27,7 +27,7 @@ Then it uses the data to check which follower is inactive:
 * If certain criteria are met, increase the score
 * Lists all users whose score is above certain threshold
 
-This approach is naive and when I've tested with my own account I've seen some false positives. But it also found real inactive/bots accounts following. Just add/modify the criteria and the threshold used to list the users.
+This approach is naive and when I've tested with my own account I've seen some false positives. But it also found real inactive/bots accounts following me. Just add/modify the criteria and the threshold used to list the users.
 
 The `-n` parameter is used when you want to avoid the first phase and only used the locally saved data.
 
